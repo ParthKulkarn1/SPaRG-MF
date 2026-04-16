@@ -6,6 +6,57 @@
 
 Traditional artificial neural networks compute using dense, continuous, energy-hungry floating-point multiply-accumulate (MAC) operations. SNNs communicate asynchronously via binary "spikes" (0 or 1), translating heavy MACs into extremely cheap localized additions (ACs). SPaRG-MF pushes this frontier further by actively pruning unnecessary tokens and attention heads dynamically while utilizing homeostatic self-regulation to keep the network stable.
 
+```mermaid
+graph TD
+    classDef stage fill:#2e3440,stroke:#81a1c1,stroke-width:2px,color:#d8dee9
+    classDef module fill:#3b4252,stroke:#88c0d0,stroke-width:2px,color:#eceff4
+    classDef ssa fill:#4c566a,stroke:#ebcb8b,stroke-width:2px,color:#eceff4
+    classDef hook fill:#bf616a,stroke:#d08770,stroke-width:2px,color:#eceff4
+    
+    Input[Input Image<br/>224x224x3] --> Stage1
+    
+    subgraph Stage 1 [Stage 1: High Res Local Context]
+    direction TB
+    S1[Embed_Orig_ImageNet<br/>Conv ÷4 Downsample]:::module
+    B1[Block DWC-7<br/>Local Mixer + Spiking MLP]:::module
+    S1 -. Membrane Shortcut .-> B1
+    end
+    
+    Input --> S1
+    B1 --> Stage2
+    
+    subgraph Stage 2 [Stage 2: Mid Res Local Context]
+    direction TB
+    S2[Embed_Max<br/>MaxPool ÷2 Downsample]:::module
+    B2[2x Block DWC-5<br/>Local Mixer + Spiking MLP]:::module
+    S2 -. Membrane Shortcut .-> B2
+    end
+    
+    B1 --> S2
+    B2 --> Stage3
+    
+    subgraph Stage 3 [Stage 3: Low Res Global Context]
+    direction TB
+    S3[Embed_Max<br/>MaxPool ÷2 Downsample]:::module
+    SSA[7x Soft-Sparse Spiking Self-Attention]:::ssa
+    TG{Dynamic Token Gating<br/>Mixed 4/8-bit Precision}:::module
+    HG{Dynamic Head Gating}:::module
+    HLIF(Homeostatic LIF<br/>Adaptive Thresholds):::module
+    
+    S3 -. Membrane Shortcut .-> SSA
+    SSA <--> TG
+    SSA <--> HG
+    SSA --> HLIF
+    end
+    
+    B2 --> S3
+    
+    HLIF --> Head[Global Avg Pool + Linear Classifier]
+    
+    Interceptor((SSA Interceptor Hook<br/>Mask Extractor)):::hook
+    SSA -. Statistics Extraction .-> Interceptor
+```
+
 ---
 
 ## 1. The Core Backbone: Hierarchical Max-Former
