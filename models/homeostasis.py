@@ -89,7 +89,7 @@ class HomeostaticLIFNode(base.MemoryModule):
             # Adjust threshold
             rate_error = self.avg_spike_rate - self.target_rate
             self.lif.v_threshold = max(
-                0.1, self.lif.v_threshold + self.adapt_scale * rate_error.item()
+                0.01, self.lif.v_threshold + self.adapt_scale * rate_error.item()
             )
 
         return spikes

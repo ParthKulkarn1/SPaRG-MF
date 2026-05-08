@@ -40,7 +40,7 @@ class S_MLP(nn.Module):
         self.fc2_conv = nn.Conv2d(hidden_features, out_features, 1)
         self.fc2_bn = nn.BatchNorm2d(out_features)
         self.fc2_lif = HomeostaticLIFNode(
-            tau=2.0, target_rate=0.3, step_mode='m')
+            tau=2.0, target_rate=0.15, step_mode='m')
 
         self.c_hidden = hidden_features
         self.c_output = out_features
