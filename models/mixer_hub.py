@@ -14,7 +14,7 @@ All tensors: [T, B, C, H, W].
 import torch
 import torch.nn as nn
 from spikingjelly.activation_based import neuron, surrogate
- from .homeostasis import HomeostaticLIFNode
+from .homeostasis import HomeostaticLIFNode
 
 
 # ═══════════════════════════════════════════════════════════════════════
