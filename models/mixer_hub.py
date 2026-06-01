@@ -112,20 +112,23 @@ class SoftSparseSSA(nn.Module):
       1. Separate Q, K, V Conv1d projections + BN + LIF  (following original SSA)
       2. Learnable temperature scaling for soft sparsity
       3. Optional external head_mask for hardware gating
+      4. Linear attention weight sparsification (threshold / top-k)
 
     Attention formula (original Spikformer-style):
         attn = Q^T K   (spike-driven linear attention, NOT softmax)
         out  = (Q · attn) * scale
 
-    We add temperature-controlled sharpening and head masking on top.
+    We add temperature-controlled sharpening, head masking, and sparsification.
     """
 
-    def __init__(self, dim, num_heads=8):
+    def __init__(self, dim, num_heads=8, sparse_threshold=None, sparse_topk=None):
         super().__init__()
         assert dim % num_heads == 0
         self.dim = dim
         self.num_heads = num_heads
         self.scale = 0.125
+        self.sparse_threshold = sparse_threshold
+        self.sparse_topk = sparse_topk
 
         self.x_lif = neuron.LIFNode(
             tau=2.0, detach_reset=True,
@@ -162,7 +165,7 @@ class SoftSparseSSA(nn.Module):
     def forward(self, x, head_mask=None):
         """
         x : [T, B, C, H, W]
-        head_mask : optional [1, 1, num_heads, 1, 1]  binary mask
+        head_mask : optional [T_dim, B_dim, num_heads, 1, 1] binary/soft mask
         Returns : [T, B, C, H, W]
         """
         T, B, C, H, W = x.shape
@@ -194,8 +197,25 @@ class SoftSparseSSA(nn.Module):
             T, B, N, self.num_heads, C // self.num_heads
         ).permute(0, 1, 3, 2, 4).contiguous()
 
+        # Save Q, K, V states
+        self.last_q = q.detach()
+        self.last_k = k.detach()
+        self.last_v = v.detach()
+
         # ── Spike-driven linear attention ──
         attn = k.transpose(-2, -1) @ v                  # [T, B, H, D, D]
+
+        # ── SPaRG-MF: linear attention sparsification ──
+        if self.sparse_threshold is not None:
+            attn = attn * (attn.abs() >= self.sparse_threshold).float()
+        elif self.sparse_topk is not None:
+            # Keep top-k entries per head row in DxD matrix
+            D = attn.shape[-1]
+            k_val = max(int(D * self.sparse_topk), 1)
+            topk_vals, _ = attn.topk(k_val, dim=-1)
+            threshold = topk_vals[..., -1:].detach()
+            attn = attn * (attn >= threshold).float()
+
         x = (q @ attn) * self.scale                      # [T, B, H, N, D]
 
         # ── SPaRG-MF: temperature sharpening ──
@@ -203,10 +223,13 @@ class SoftSparseSSA(nn.Module):
 
         # ── SPaRG-MF: head gating ──
         if head_mask is not None:
-            # head_mask: [1, 1, num_heads, 1, 1] → broadcast to [T, B, H, N, D]
+            # head_mask: broadcast to [T, B, H, N, D]
             x = x * head_mask
 
         x = x.transpose(3, 4).reshape(T, B, C, N).contiguous()
+        # Expose attention map to parent modules (useful for attention gating)
+        self.last_attn_weights = attn.detach()
+
         x = self.attn_lif(x)
         x = x.flatten(0, 1)
         x = self.proj_bn(self.proj_conv(x)).reshape(T, B, C, H, W)
@@ -218,9 +241,9 @@ class SoftSparseSSA(nn.Module):
 class Block_SSA(nn.Module):
     """SSA Mixer + S_MLP block."""
 
-    def __init__(self, dim, num_heads, mlp_ratio=4.0):
+    def __init__(self, dim, num_heads, mlp_ratio=4.0, sparse_threshold=None, sparse_topk=None):
         super().__init__()
-        self.attn = SoftSparseSSA(dim, num_heads=num_heads)
+        self.attn = SoftSparseSSA(dim, num_heads=num_heads, sparse_threshold=sparse_threshold, sparse_topk=sparse_topk)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = S_MLP(in_features=dim, hidden_features=mlp_hidden_dim)
 
@@ -228,3 +251,4 @@ class Block_SSA(nn.Module):
         x = self.attn(x, head_mask=head_mask)
         x = self.mlp(x)
         return x
+

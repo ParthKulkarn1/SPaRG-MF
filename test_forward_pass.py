@@ -70,7 +70,7 @@ def main():
     print(f"Input:  {list(dummy.shape)}")
     print(f"Output: {list(logits.shape)}")
     assert logits.shape == (2, 10), f"Bad shape: {logits.shape}"
-    print("✓ Forward pass OK")
+    print("OK: Forward pass OK")
 
     # ── 3. Backward pass ─────────────────────────────────────────────
     sep("3 · Backward pass (surrogate gradients)")
@@ -84,12 +84,12 @@ def main():
     n_total = sum(1 for _, p in model.named_parameters() if p.requires_grad)
     print(f"Params with grads: {n_grad}/{n_total}")
     if n_grad == n_total:
-        print("✓ All parameters received gradients")
+        print("OK: All parameters received gradients")
     else:
         missing = [n for n, p in model.named_parameters()
                    if p.requires_grad and p.grad is None]
         for m in missing[:5]:
-            print(f"  ✗ {m}")
+            print(f"  [MISSING] {m}")
 
     # ── 4. SSA Interception ──────────────────────────────────────────
     sep("4 · SSA Interception Engine")
@@ -118,9 +118,9 @@ def main():
             active = int(m.sum().item())
             total = m.numel()
             print(f"  SSA block {i}: {active}/{total} heads active  mask={m.squeeze()}")
-        print("✓ Masks generated")
+        print("OK: Masks generated")
     else:
-        print("✗ No masks generated")
+        print("FAIL: No masks generated")
 
     interceptor.detach()
 
@@ -133,7 +133,7 @@ def main():
         with torch.no_grad():
             gated = model(dummy, external_head_masks=masks_device)
         print(f"Gated output: {list(gated.shape)}")
-        print("✓ Hardware-gated forward pass OK")
+        print("OK: Hardware-gated forward pass OK")
 
     # ── 7. Spike stats ───────────────────────────────────────────────
     sep("7 · Homeostatic spike-rate stats")

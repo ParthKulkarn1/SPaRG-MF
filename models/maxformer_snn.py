@@ -44,7 +44,18 @@ class SpikingMaxFormer(nn.Module):
     enable_head_gate : bool Enable dynamic head gating on SSA blocks.
     enable_token_gate : bool Enable dynamic token gating on SSA blocks.
     enable_mixed_prec : bool Enable mixed-precision routing.
-    token_keep_ratio : float Minimum fraction of tokens to keep.
+    token_keep_ratio : float | list[float]
+        Minimum fraction of tokens to keep. If list, must have length depths[2] (staged pruning).
+    gate_type : str
+        Type of dynamic token gate: 'mlp', 'magnitude', or 'attention'.
+    batch_averaged : bool
+        If True, average masks over batch dimension. If False, use per-instance masks.
+    time_dependent : bool
+        If True, compute separate masks at each time step. If False, static over time.
+    sparse_threshold : float, optional
+        Minimum attention score threshold.
+    sparse_topk : float, optional
+        Keep only top-k fraction of attention entries.
     """
 
     def __init__(
@@ -60,7 +71,12 @@ class SpikingMaxFormer(nn.Module):
         enable_head_gate: bool = True,
         enable_token_gate: bool = True,
         enable_mixed_prec: bool = True,
-        token_keep_ratio: float = 0.5,
+        token_keep_ratio = 0.5,
+        gate_type: str = 'mlp',
+        batch_averaged: bool = False,
+        time_dependent: bool = False,
+        sparse_threshold: float = None,
+        sparse_topk: float = None,
     ):
         super().__init__()
         if depths is None:
@@ -69,6 +85,12 @@ class SpikingMaxFormer(nn.Module):
         self.time_steps = time_steps
         self.embed_dims = embed_dims
         self.num_heads = num_heads
+        
+        self.gate_type = gate_type.lower()
+        self.batch_averaged = batch_averaged
+        self.time_dependent = time_dependent
+        self.sparse_threshold = sparse_threshold
+        self.sparse_topk = sparse_topk
 
         dim1 = embed_dims // 4
         dim2 = embed_dims // 2
@@ -103,7 +125,8 @@ class SpikingMaxFormer(nn.Module):
             in_channels=dim2, embed_dims=dim3)
 
         self.stage3 = nn.ModuleList([
-            Block_SSA(dim=dim3, num_heads=num_heads, mlp_ratio=mlp_ratio)
+            Block_SSA(dim=dim3, num_heads=num_heads, mlp_ratio=mlp_ratio,
+                      sparse_threshold=sparse_threshold, sparse_topk=sparse_topk)
             for _ in range(depths[2])
         ])
 
@@ -121,18 +144,27 @@ class SpikingMaxFormer(nn.Module):
         # ══════════════════════════════════════════════════════════════
         n_ssa = depths[2]
 
+        # Setup staged keep ratios
+        if isinstance(token_keep_ratio, list):
+            assert len(token_keep_ratio) == n_ssa, \
+                f"token_keep_ratio list length {len(token_keep_ratio)} must match depths[2] = {n_ssa}"
+            self.token_keep_ratios = token_keep_ratio
+        else:
+            self.token_keep_ratios = [token_keep_ratio] * n_ssa
+
         # Dynamic head gates (one per SSA block)
         self.head_gates = nn.ModuleList([
-            DynamicHeadGate(dim3, num_heads)
+            DynamicHeadGate(dim3, num_heads, batch_averaged=batch_averaged, time_dependent=time_dependent)
             if enable_head_gate else None
             for _ in range(n_ssa)
         ])
 
         # Dynamic token gates (one per SSA block)
         self.token_gates = nn.ModuleList([
-            DynamicTokenGate(dim3, keep_ratio=token_keep_ratio)
+            DynamicTokenGate(dim3, keep_ratio=self.token_keep_ratios[i], gate_type=gate_type,
+                             batch_averaged=batch_averaged, time_dependent=time_dependent)
             if enable_token_gate else None
-            for _ in range(n_ssa)
+            for i in range(n_ssa)
         ])
 
         # Mixed precision controller (shared)
@@ -210,7 +242,13 @@ class SpikingMaxFormer(nn.Module):
             if self.token_gates[i] is not None:
                 T, B, C, H, W = x.shape
                 x_flat = x.flatten(3).transpose(2, 3)  # [T, B, N, C]
-                token_mask = self.token_gates[i](x_flat)
+
+                # Fetch last attention weights if available and gate_type is attention
+                attn_weights = None
+                if self.gate_type == 'attention' and hasattr(blk.attn, 'last_attn_weights'):
+                    attn_weights = blk.attn.last_attn_weights
+
+                token_mask = self.token_gates[i](x_flat, attn_weights=attn_weights)
 
                 if self.mixed_prec is not None:
                     x_flat = self.mixed_prec(x_flat, token_mask)
