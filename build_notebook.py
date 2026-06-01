@@ -72,7 +72,7 @@ cell_deps = code(
     'print(f"CUDA: {torch.cuda.is_available()}")\n'
     'if torch.cuda.is_available():\n'
     '    print(f"GPU: {torch.cuda.get_device_name(0)}")\n'
-    '    print(f"Memory: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")'
+    '    print(f"Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")'
 )
 
 cell_verify_md = md("## 4. Verify Model Builds")
