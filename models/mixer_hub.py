@@ -58,7 +58,7 @@ class S_MLP(nn.Module):
 
         x = self.fc2_lif(x)
         x = self.fc2_conv(x.flatten(0, 1))
-        x = self.fc2_bn(x).reshape(T, B, C, H, W).contiguous()
+        x = self.fc2_bn(x).reshape(T, B, self.c_output, H, W).contiguous()
         x = x + identity
         return x
 
