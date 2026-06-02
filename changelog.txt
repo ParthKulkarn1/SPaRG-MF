@@ -12,6 +12,9 @@
   - Adjusted staged token keep ratios from `[0.9, 0.7, 0.5]` to `[0.95, 0.90, 0.85]` to prevent information/voltage starvation in deep stages.
   - Lowered S_MLP homeostasis target firing rates to `0.15` (fc1) and `0.08` (fc2) in `models/mixer_hub.py` to prevent threshold explosion and enforce sparser, cleaner semantic maps.
   - Resolved `AttributeError: total_mem` in notebook GPU initialization cell.
+  - Fixed a channel dimensions bug in `S_MLP` (reshaping output activations using input channels `C` instead of `self.c_output` in `models/mixer_hub.py`), which would cause runtime crashes if layers had unequal input/output dimensions.
+  - Refactored `colab_training.ipynb` directory switching (`PROJECT_DIR`) and verification cells to dynamically detect local environments and GPU availability, preventing crashes on local CPU-only VS Code / Jupyter executions.
+  - Adjusted post-training calibration sweep thresholds in `colab_training.ipynb` to match trained empirical ranges, ensuring non-zero head sparsity is correctly generated.
 - **`test_advanced_pruning.py`**: Created a comprehensive dynamic test suite validating all advanced features, staged ratios, and Pareto evaluation sweeps.
 
 ## V0.4.0 - ImageNet Scale out & `timm` Integration
