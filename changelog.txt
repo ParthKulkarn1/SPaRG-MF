@@ -1,6 +1,20 @@
 # Spiking Max-Former (SPaRG-MF) Changelog
 
-## V0.4.0 - ImageNet Scale out & `timm` Integration (Current)
+## V0.5.0 - Advanced Pruning, Metrics, and Optimization (Current)
+- **`models/dynamic_gate.py`**: Added support for per-instance routing (replaces batch-averaging to allow input-dependent masks), time-dependent gating per SNN simulation step, and alternative parameter-free token gating policies (Magnitude-based L2 channel norm and Attention-weighted saliency).
+- **`models/mixer_hub.py` & `models/soft_sparse_ssa.py`**: Integrated Top-k and absolute thresholding for linear attention (`SoftSparseSSA`) and softmax attention (`SpikingSoftSparseSelfAttention`) to enable attention sparsification. Added tracking for Q, K, and V states to enable alignment analysis.
+- **`models/maxformer_snn.py`**: Configured staged token keep ratios (`token_keep_ratio` as a list of ratios per block) and integrated the new per-instance, temporal, and alternative gating policies.
+- **`engine/ssa_interceptor.py`**: Added Q-value computation (Query-Key cosine correlation), head redundancy metrics (pairwise head correlation), attention Shannon entropy, and spike Bernoulli entropy to evaluate attention head health and prevent hallucinations.
+- **`engine/regularization.py`**: Created `DiversityLoss` to penalize cross-head correlation during training, forcing heads to learn orthogonal features.
+- **`engine/inference_pruning.py`**: Authored post-training calibration and dynamic gating sweeps to evaluate accuracy vs. head sparsity and generate static hardware masks.
+- **Optimization Tweaks**:
+  - Lowered `DiversityLoss` weight from `0.01` to `0.001` in notebook model configurations to give the network more representation flexibility.
+  - Adjusted staged token keep ratios from `[0.9, 0.7, 0.5]` to `[0.95, 0.90, 0.85]` to prevent information/voltage starvation in deep stages.
+  - Lowered S_MLP homeostasis target firing rates to `0.15` (fc1) and `0.08` (fc2) in `models/mixer_hub.py` to prevent threshold explosion and enforce sparser, cleaner semantic maps.
+  - Resolved `AttributeError: total_mem` in notebook GPU initialization cell.
+- **`test_advanced_pruning.py`**: Created a comprehensive dynamic test suite validating all advanced features, staged ratios, and Pareto evaluation sweeps.
+
+## V0.4.0 - ImageNet Scale out & `timm` Integration
 - `models/maxformer_snn.py`: Applied `@register_model` to all our factory configurations (`sparg_mf_10_384`, `sparg_mf_10_512`, `sparg_mf_10_768`). The models can now be instantiated natively anywhere using `timm.create_model('sparg_mf...`, completely bridging out the SNN implementation into PyTorch's broader ecosystem.
 - `train_imagenet.py`: Authored an official ImageNet-1K PyTorch DDP training entry point heavily adapted from standard scaling heuristics. Native hooks into `timm` for dataset prefetching, `MixUp`/`CutMix` augmentations, AutoCast (AMP), scheduling, and Cross-GPU metrics reduction while guaranteeing that `functional.reset_net(model)` wipes SNN memory buffers cleanly between inference steps.
 
