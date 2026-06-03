@@ -39,6 +39,7 @@ class HomeostaticLIFNode(base.MemoryModule):
         target_rate: float = 0.3,
         homeo_rate: float = 0.01,
         adapt_scale: float = 0.01,
+        v_threshold_min: float = 0.1,
         step_mode: str = 'm',
     ):
         super().__init__()
@@ -55,6 +56,7 @@ class HomeostaticLIFNode(base.MemoryModule):
         self.target_rate = target_rate
         self.homeo_rate = homeo_rate
         self.adapt_scale = adapt_scale
+        self.v_threshold_min = v_threshold_min
 
         # Running average spike rate (scalar, shared across all neurons in this
         # module instance).  Registered as a buffer so it persists across
@@ -89,7 +91,7 @@ class HomeostaticLIFNode(base.MemoryModule):
             # Adjust threshold
             rate_error = self.avg_spike_rate - self.target_rate
             self.lif.v_threshold = max(
-                0.01, self.lif.v_threshold + self.adapt_scale * rate_error.item()
+                self.v_threshold_min, self.lif.v_threshold + self.adapt_scale * rate_error.item()
             )
 
         return spikes

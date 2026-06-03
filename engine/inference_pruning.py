@@ -45,9 +45,9 @@ class SNNInferencePruningEngine:
         self.interceptor.detach()
         print("Calibration completed successfully.")
 
-    def generate_static_masks(self, metric: str = 'importance', threshold: float = 1e-5):
+    def generate_static_masks(self, metric: str = 'importance', threshold: float = 1e-5, prune_ratio: float = None):
         """
-        Generate static binary head-gating masks for Stage-3 based on a metric threshold.
+        Generate static binary head-gating masks for Stage-3 based on a metric threshold or prune ratio.
 
         Supported Metrics:
           - 'importance': Prune heads with low Variance * Mean activations.
@@ -55,6 +55,16 @@ class SNNInferencePruningEngine:
           - 'redundancy': Prune heads with average cross-head correlation > threshold.
           - 'entropy': Prune heads with attention Shannon entropy > threshold.
           - 'spike_entropy': Prune heads with Bernoulli spike output entropy < threshold.
+
+        Parameters
+        ----------
+        metric : str
+            Diagnostic metric to use.
+        threshold : float
+            Static absolute threshold. Ignored if prune_ratio is provided.
+        prune_ratio : float, optional
+            Fraction of heads (e.g. 0.25) to prune globally across all blocks.
+            If provided, thresholds are dynamically set to the given percentile.
 
         Returns
         -------
@@ -68,27 +78,52 @@ class SNNInferencePruningEngine:
         metric = metric.lower()
         if metric == 'importance':
             scores_dict = self.interceptor.compute_head_importance(self.num_heads)
-            keep_fn = lambda score: score > threshold
+            lower_is_worse = True
         elif metric == 'q_value':
             scores_dict = self.interceptor.compute_head_q_value()
-            keep_fn = lambda score: score >= threshold
+            lower_is_worse = True
         elif metric == 'redundancy':
             scores_dict = self.interceptor.compute_head_redundancy(self.num_heads)
-            # High redundancy heads should be PRUNED (keep when redundancy <= threshold)
-            keep_fn = lambda score: score <= threshold
+            lower_is_worse = False  # Higher redundancy is worse
         elif metric == 'entropy':
             scores_dict = self.interceptor.compute_attention_entropy()
-            # Very high attention entropy indicates unfocused uniform attention (prune when entropy <= threshold)
-            keep_fn = lambda score: score <= threshold
+            lower_is_worse = False  # Higher entropy (random focus) is worse
         elif metric == 'spike_entropy':
             scores_dict = self.interceptor.compute_spike_entropy(self.num_heads)
-            # Dead or saturated heads have low Bernoulli entropy (keep when entropy >= threshold)
-            keep_fn = lambda score: score >= threshold
+            lower_is_worse = True   # Saturated/dead heads have low entropy, which is worse
         else:
             raise ValueError(f"Unknown pruning metric: {metric}")
 
         if scores_dict is None:
             raise RuntimeError(f"Failed to compute score dict for metric: {metric}")
+
+        # If prune_ratio is provided, compute a dynamic threshold based on percentiles
+        if prune_ratio is not None:
+            assert 0.0 <= prune_ratio <= 1.0, "prune_ratio must be between 0.0 and 1.0"
+            # Pool all head scores across all blocks
+            all_scores = []
+            for block_name in sorted(scores_dict.keys()):
+                all_scores.append(scores_dict[block_name])
+            all_scores = torch.cat(all_scores, dim=0) # [Num_Blocks * Num_Heads]
+            
+            # Find the percentile score
+            k = max(int(all_scores.numel() * prune_ratio), 1)
+            if lower_is_worse:
+                # We want to prune the bottom X% lowest scores
+                topk_vals, _ = all_scores.topk(all_scores.numel() - k + 1, largest=True)
+                threshold = topk_vals[-1].item()
+                keep_fn = lambda score: score >= threshold
+            else:
+                # We want to prune the top X% highest scores (redundancy/entropy)
+                topk_vals, _ = all_scores.topk(all_scores.numel() - k + 1, largest=False)
+                threshold = topk_vals[-1].item()
+                keep_fn = lambda score: score <= threshold
+        else:
+            # Revert to static absolute thresholding
+            if lower_is_worse:
+                keep_fn = lambda score: score >= threshold
+            else:
+                keep_fn = lambda score: score <= threshold
 
         masks = []
         # Sort blocks to ensure order match

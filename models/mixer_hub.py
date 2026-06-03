@@ -13,7 +13,7 @@ All tensors: [T, B, C, H, W].
 
 import torch
 import torch.nn as nn
-from spikingjelly.activation_based import neuron, surrogate
+from spikingjelly.activation_based import neuron, surrogate, layer
 from .homeostasis import HomeostaticLIFNode
 
 
@@ -35,12 +35,14 @@ class S_MLP(nn.Module):
         self.fc1_conv = nn.Conv2d(in_features, hidden_features, 1)
         self.fc1_bn = nn.BatchNorm2d(hidden_features)
         self.fc1_lif = HomeostaticLIFNode(
-            tau=2.0, target_rate=0.3, step_mode='m')
+            tau=2.0, target_rate=0.15, v_threshold_min=0.1, step_mode='m')
+        self.drop1 = layer.Dropout(0.1)
 
         self.fc2_conv = nn.Conv2d(hidden_features, out_features, 1)
         self.fc2_bn = nn.BatchNorm2d(out_features)
         self.fc2_lif = HomeostaticLIFNode(
-            tau=2.0, target_rate=0.15, step_mode='m')
+            tau=2.0, target_rate=0.08, v_threshold_min=0.1, step_mode='m')
+        self.drop2 = layer.Dropout(0.1)
 
         self.c_hidden = hidden_features
         self.c_output = out_features
@@ -50,6 +52,7 @@ class S_MLP(nn.Module):
         identity = x
 
         x = self.fc1_lif(x)
+        x = self.drop1(x)
         x = self.fc1_conv(x.flatten(0, 1))
         x = self.fc1_bn(x).reshape(T, B, self.c_hidden, H, W).contiguous()
         if self.res:
@@ -57,6 +60,7 @@ class S_MLP(nn.Module):
             identity = x
 
         x = self.fc2_lif(x)
+        x = self.drop2(x)
         x = self.fc2_conv(x.flatten(0, 1))
         x = self.fc2_bn(x).reshape(T, B, self.c_output, H, W).contiguous()
         x = x + identity

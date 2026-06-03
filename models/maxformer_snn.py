@@ -182,9 +182,9 @@ class SpikingMaxFormer(nn.Module):
             nn.init.trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.BatchNorm2d):
+        elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
             nn.init.constant_(m.weight, 1.0)
-            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.bias, 0.5)
         elif isinstance(m, nn.Linear):
             nn.init.trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
