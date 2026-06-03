@@ -120,7 +120,7 @@ cell_config = code(
     'LR = 1e-3\n'
     'WEIGHT_DECAY = 1e-4\n'
     'TIME_STEPS = 4\n'
-    'EMBED_DIMS = 128\n'
+    'EMBED_DIMS = 384\n'
     'DEPTHS = [1, 1, 3]\n'
     'NUM_HEADS = 4\n'
     'NUM_WORKERS = 2'
@@ -178,7 +178,12 @@ cell_model = code(
     '\n'
     'optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)\n'
     'criterion = nn.CrossEntropyLoss()\n'
-    'scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)'
+    '\n'
+    '# Sequential Scheduler with 5-epoch Warmup\n'
+    'warmup_epochs = 5\n'
+    'scheduler1 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs)\n'
+    'scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - warmup_epochs)\n'
+    'scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[warmup_epochs])'
 )
 
 cell_check_md = md(

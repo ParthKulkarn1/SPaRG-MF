@@ -38,7 +38,7 @@ class HomeostaticLIFNode(base.MemoryModule):
         v_threshold_init: float = 1.0,
         target_rate: float = 0.3,
         homeo_rate: float = 0.01,
-        adapt_scale: float = 0.05,
+        adapt_scale: float = 0.01,
         step_mode: str = 'm',
     ):
         super().__init__()
