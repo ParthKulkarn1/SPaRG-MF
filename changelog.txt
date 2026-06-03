@@ -15,6 +15,9 @@
   - Fixed a channel dimensions bug in `S_MLP` (reshaping output activations using input channels `C` instead of `self.c_output` in `models/mixer_hub.py`), which would cause runtime crashes if layers had unequal input/output dimensions.
   - Refactored `colab_training.ipynb` directory switching (`PROJECT_DIR`) and verification cells to dynamically detect local environments and GPU availability, preventing crashes on local CPU-only VS Code / Jupyter executions.
   - Adjusted post-training calibration sweep thresholds in `colab_training.ipynb` to match trained empirical ranges, ensuring non-zero head sparsity is correctly generated.
+  - Smoothed out homeostasis threshold volatility by decreasing `adapt_scale` from `0.05` to `0.01` in `models/homeostasis.py`.
+  - Scaled up default `EMBED_DIMS` to `384` in the training configuration to support high-capacity visual representation learning on CIFAR-100.
+  - Integrated a 5-epoch linear learning rate warmup sequence via `SequentialLR` to allow thresholds to stabilize prior to cosine decay optimization.
 - **`test_advanced_pruning.py`**: Created a comprehensive dynamic test suite validating all advanced features, staged ratios, and Pareto evaluation sweeps.
 
 ## V0.4.0 - ImageNet Scale out & `timm` Integration
